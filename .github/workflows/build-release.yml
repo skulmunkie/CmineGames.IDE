@@ -101,7 +101,6 @@ jobs:
         with:
           name: installer-mac
           path: |
-            out/make/dmg/*.dmg
             out/make/zip/darwin/**/*.zip
             out/update-meta/latest-mac.yml
           if-no-files-found: error
@@ -148,7 +147,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             artifacts/windows/**/*.exe
-            artifacts/mac/**/*.dmg
             artifacts/mac/**/*.zip
             artifacts/windows/latest.yml
             artifacts/mac/latest-mac.yml
@@ -161,7 +159,7 @@ jobs:
           BASE="https://github.com/$REPO/releases/download/$VERSION"
 
           WIN_FILE=$(find artifacts/windows -name "*.exe" | head -1 | xargs basename)
-          MAC_FILE=$(find artifacts/mac -name "*.dmg" | head -1 | xargs basename)
+          MAC_FILE=$(find artifacts/mac -name "*.zip" | head -1 | xargs basename)
 
           echo "windows_url=$BASE/$WIN_FILE" >> $GITHUB_OUTPUT
           echo "mac_url=$BASE/$MAC_FILE"     >> $GITHUB_OUTPUT
