@@ -1,0 +1,204 @@
+name: Build & Release IDE
+
+# Triggered by the private repo's deploy-ide.yml via repository_dispatch.
+# Source is downloaded from the private Supabase handoff bucket — no source lives here.
+#
+# The source zip preserves the monorepo layout:
+#   ide/           ← Electron source (npm ci + electron-forge run from here)
+#   platform/lib/  ← shared lib resolved by the @platform Vite alias
+#
+# Required secrets (this public repo's Settings → Secrets → Actions):
+#   SUPABASE_URL              — Supabase project URL
+#   SUPABASE_SERVICE_ROLE_KEY — Supabase service role key
+#
+# Required variables (Settings → Variables):
+#   PUBLIC_REPO_OWNER  — this repo's owner (used to construct GitHub Release URLs)
+#   PUBLIC_REPO_NAME   — this repo's name
+
+on:
+  repository_dispatch:
+    types: [new-build]
+
+concurrency:
+  group: ide-release-${{ github.event.client_payload.version }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Build on Windows ───────────────────────────────────────────────────────
+  build-windows:
+    name: Build · Windows
+    runs-on: windows-latest
+    outputs:
+      artifact: installer-windows
+    steps:
+      - name: Download + unzip IDE source
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" `
+            -Headers @{ "Authorization" = "Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" } `
+            -OutFile source.zip
+          Expand-Archive -Path source.zip -DestinationPath . -Force
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ide/package-lock.json
+
+      - name: Install deps
+        working-directory: ide
+        run: npm ci
+
+      - name: Build installer
+        working-directory: ide
+        shell: bash
+        run: npm run make:${{ github.event.client_payload.channel }}
+        env:
+          CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
+          CGP_IDE_PUBLIC_REPO_OWNER: ${{ vars.PUBLIC_REPO_OWNER }}
+          CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
+          CGP_PLATFORM_PREVIEW_URL:  ${{ github.event.client_payload.platform_preview_url }}
+          CGP_PLATFORM_PROD_URL:     ${{ github.event.client_payload.platform_prod_url }}
+
+      - name: Generate update YAML
+        working-directory: ide
+        run: node scripts/generate-update-yml.mjs
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: |
+            ide/out/make/squirrel.windows/**/*.exe
+            ide/out/update-meta/latest.yml
+          if-no-files-found: error
+
+  # ── Build on macOS ─────────────────────────────────────────────────────────
+  build-mac:
+    name: Build · macOS
+    runs-on: macos-latest
+    outputs:
+      artifact: installer-mac
+    steps:
+      - name: Download + unzip IDE source
+        run: |
+          curl -sf -L \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -o source.zip
+          unzip source.zip -d .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ide/package-lock.json
+
+      - name: Install deps
+        working-directory: ide
+        run: npm ci
+
+      - name: Build installer
+        working-directory: ide
+        run: npm run make:${{ github.event.client_payload.channel }}
+        env:
+          CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
+          CGP_IDE_PUBLIC_REPO_OWNER: ${{ vars.PUBLIC_REPO_OWNER }}
+          CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
+          CGP_PLATFORM_PREVIEW_URL:  ${{ github.event.client_payload.platform_preview_url }}
+          CGP_PLATFORM_PROD_URL:     ${{ github.event.client_payload.platform_prod_url }}
+
+      - name: Generate update YAML
+        working-directory: ide
+        run: node scripts/generate-update-yml.mjs
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-mac
+          path: |
+            ide/out/make/zip/darwin/**/*.zip
+            ide/out/update-meta/latest-mac.yml
+          if-no-files-found: error
+
+  # ── Create GitHub Release ──────────────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-windows
+          path: artifacts/windows
+
+      - name: Download Mac artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-mac
+          path: artifacts/mac
+
+      - name: Download source (for scripts + release notes)
+        run: |
+          curl -sf -L \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -o source.zip
+          unzip source.zip -d .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:   ${{ github.event.client_payload.version }}
+          name:       CGP IDE ${{ github.event.client_payload.version }}
+          prerelease: ${{ github.event.client_payload.channel == 'preview' }}
+          body_path:  ide/RELEASE_NOTES.md
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/windows/**/*.exe
+            artifacts/mac/**/*.zip
+            artifacts/windows/**/latest.yml
+            artifacts/mac/**/latest-mac.yml
+
+      - name: Determine installer download URLs
+        id: urls
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+          REPO="${{ github.repository }}"
+          BASE="https://github.com/$REPO/releases/download/$VERSION"
+
+          WIN_FILE=$(basename "$(find artifacts/windows -name "*.exe" | head -1)")
+          MAC_FILE=$(basename "$(find artifacts/mac -name "*.zip" | head -1)")
+
+          echo "windows_url=$BASE/$WIN_FILE" >> $GITHUB_OUTPUT
+          echo "mac_url=$BASE/$MAC_FILE"     >> $GITHUB_OUTPUT
+          echo "Windows: $BASE/$WIN_FILE"
+          echo "Mac:     $BASE/$MAC_FILE"
+
+      - name: Upsert ide_releases DB row
+        working-directory: ide
+        run: node scripts/upsert-release.mjs
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
+          IDE_VERSION:               ${{ github.event.client_payload.version }}
+          WINDOWS_URL:               ${{ steps.urls.outputs.windows_url }}
+          MAC_URL:                   ${{ steps.urls.outputs.mac_url }}
+
+      - name: Cleanup Supabase source zip
+        if: always()
+        run: |
+          curl -sf -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            && echo "Cleaned up ${{ github.event.client_payload.artifact_path }}" \
+            || echo "Cleanup failed (non-fatal)"
