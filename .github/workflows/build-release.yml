@@ -58,6 +58,8 @@ jobs:
           CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
           CGP_IDE_PUBLIC_REPO_OWNER: ${{ vars.PUBLIC_REPO_OWNER }}
           CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
+          CGP_PLATFORM_PREVIEW_URL:  ${{ github.event.client_payload.platform_preview_url }}
+          CGP_PLATFORM_PROD_URL:     ${{ github.event.client_payload.platform_prod_url }}
 
       - name: Generate update YAML
         working-directory: ide
@@ -104,6 +106,8 @@ jobs:
           CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
           CGP_IDE_PUBLIC_REPO_OWNER: ${{ vars.PUBLIC_REPO_OWNER }}
           CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
+          CGP_PLATFORM_PREVIEW_URL:  ${{ github.event.client_payload.platform_preview_url }}
+          CGP_PLATFORM_PROD_URL:     ${{ github.event.client_payload.platform_prod_url }}
 
       - name: Generate update YAML
         working-directory: ide
