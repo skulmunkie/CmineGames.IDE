@@ -83,7 +83,7 @@ jobs:
     steps:
       - name: Download + unzip IDE source
         run: |
-          curl -sf -L \
+          curl -fL --retry 3 --retry-delay 5 --retry-connrefused \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -o source.zip
@@ -144,7 +144,7 @@ jobs:
 
       - name: Download source (for scripts + release notes)
         run: |
-          curl -sf -L \
+          curl -fL --retry 3 --retry-delay 5 --retry-connrefused \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/releases/${{ github.event.client_payload.artifact_path }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -o source.zip
