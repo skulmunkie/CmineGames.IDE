@@ -158,8 +158,8 @@ jobs:
           REPO="${{ github.repository }}"
           BASE="https://github.com/$REPO/releases/download/$VERSION"
 
-          WIN_FILE=$(find artifacts/windows -name "*.exe" | head -1 | xargs basename)
-          MAC_FILE=$(find artifacts/mac -name "*.zip" | head -1 | xargs basename)
+          WIN_FILE=$(basename "$(find artifacts/windows -name "*.exe" | head -1)")
+          MAC_FILE=$(basename "$(find artifacts/mac -name "*.zip" | head -1)")
 
           echo "windows_url=$BASE/$WIN_FILE" >> $GITHUB_OUTPUT
           echo "mac_url=$BASE/$MAC_FILE"     >> $GITHUB_OUTPUT
