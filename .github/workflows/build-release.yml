@@ -3,12 +3,15 @@ name: Build & Release IDE
 # Triggered by the private repo's deploy-ide.yml via repository_dispatch.
 # Source is downloaded from the private Supabase handoff bucket — no source lives here.
 #
+# The source zip preserves the monorepo layout:
+#   ide/           ← Electron source (npm ci + electron-forge run from here)
+#   platform/lib/  ← shared lib resolved by the @platform Vite alias
+#
 # Required secrets (this public repo's Settings → Secrets → Actions):
 #   SUPABASE_URL             — Supabase project URL
 #   SUPABASE_SERVICE_ROLE_KEY — Supabase service role key
 #
 # Required variables (Settings → Variables):
-#   PRIVATE_SUPABASE_REPO_URL is NOT needed — the URL comes in the dispatch payload.
 #   PUBLIC_REPO_OWNER  — this repo's owner (used to construct GitHub Release URLs)
 #   PUBLIC_REPO_NAME   — this repo's name
 
@@ -41,10 +44,14 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: ide/package-lock.json
 
-      - run: npm ci
+      - name: Install deps
+        working-directory: ide
+        run: npm ci
 
       - name: Build installer
+        working-directory: ide
         shell: bash
         run: npm run make:${{ github.event.client_payload.channel }}
         env:
@@ -53,6 +60,7 @@ jobs:
           CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
 
       - name: Generate update YAML
+        working-directory: ide
         run: node scripts/generate-update-yml.mjs
 
       - name: Upload build artifacts
@@ -60,8 +68,8 @@ jobs:
         with:
           name: installer-windows
           path: |
-            out/make/squirrel.windows/**/*.exe
-            out/update-meta/latest.yml
+            ide/out/make/squirrel.windows/**/*.exe
+            ide/out/update-meta/latest.yml
           if-no-files-found: error
 
   # ── Build on macOS ─────────────────────────────────────────────────────────
@@ -83,10 +91,14 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: ide/package-lock.json
 
-      - run: npm ci
+      - name: Install deps
+        working-directory: ide
+        run: npm ci
 
       - name: Build installer
+        working-directory: ide
         run: npm run make:${{ github.event.client_payload.channel }}
         env:
           CGP_BUILD_CHANNEL:         ${{ github.event.client_payload.channel }}
@@ -94,6 +106,7 @@ jobs:
           CGP_IDE_PUBLIC_REPO_NAME:  ${{ vars.PUBLIC_REPO_NAME }}
 
       - name: Generate update YAML
+        working-directory: ide
         run: node scripts/generate-update-yml.mjs
 
       - name: Upload build artifacts
@@ -101,8 +114,8 @@ jobs:
         with:
           name: installer-mac
           path: |
-            out/make/zip/darwin/**/*.zip
-            out/update-meta/latest-mac.yml
+            ide/out/make/zip/darwin/**/*.zip
+            ide/out/update-meta/latest-mac.yml
           if-no-files-found: error
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
@@ -143,7 +156,7 @@ jobs:
           tag_name:   ${{ github.event.client_payload.version }}
           name:       CGP IDE ${{ github.event.client_payload.version }}
           prerelease: ${{ github.event.client_payload.channel == 'preview' }}
-          body_path:  RELEASE_NOTES.md
+          body_path:  ide/RELEASE_NOTES.md
           fail_on_unmatched_files: true
           files: |
             artifacts/windows/**/*.exe
@@ -167,6 +180,7 @@ jobs:
           echo "Mac:     $BASE/$MAC_FILE"
 
       - name: Upsert ide_releases DB row
+        working-directory: ide
         run: node scripts/upsert-release.mjs
         env:
           SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
