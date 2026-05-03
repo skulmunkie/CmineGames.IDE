@@ -148,8 +148,8 @@ jobs:
           files: |
             artifacts/windows/**/*.exe
             artifacts/mac/**/*.zip
-            artifacts/windows/latest.yml
-            artifacts/mac/latest-mac.yml
+            artifacts/windows/**/latest.yml
+            artifacts/mac/**/latest-mac.yml
 
       - name: Determine installer download URLs
         id: urls
